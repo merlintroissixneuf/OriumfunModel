@@ -1,18 +1,20 @@
 // --- Imports ---
 const df = require('danfojs-node');
-const tf = require('@tensorflow/tfjs-node'); // We will use TensorFlow for this part
+const tf = require('@tensorflow/tfjs-node');
 const path = require('path');
 
 // --- Main Function ---
 async function runTraining() {
   console.log("--- Orium v2.0 Training Process ---");
   
-  // (Previous steps are assumed complete and correct)
-  // --- Load Data ---
+  // --- Step 1: Load Data ---
+  console.log("\nStep 1: Loading Cleaned Data...");
   const dataPath = path.join(__dirname, 'data/BTCUSD_1min_clean.csv');
   let dataframe = await df.readCSV(dataPath);
-  
-  // --- Manual Feature Engineering ---
+  console.log("   - Data loaded successfully.");
+
+  // --- Step 2: Manual Feature Engineering ---
+  console.log("\nStep 2: Engineering Features...");
   const closePrices = dataframe['Close'].values;
   const numPrices = closePrices.length;
   let priceChangeValues = [0];
@@ -34,48 +36,42 @@ async function runTraining() {
     else { let sum = 0; for (let j = 0; j < 30; j++) { sum += closePrices[i - j]; } sma30Values.push(sum / 30); }
   }
   dataframe.addColumn('SMA_30', sma30Values, { inplace: true });
-  dataframe.fillna({ inplace: true, values: 0 });
+  
+  // CORRECTED SYNTAX: Re-assign the result of fillna to the dataframe variable.
+  dataframe = dataframe.fillna({ values: [0] });
+  console.log("   - Features created and NaN values filled.");
 
-  console.log("\n--- Data Preparation for AI Model ---");
+  // --- Step 3: Data Preparation for AI Model ---
+  console.log("\nStep 3: Preparing Data for AI Model...");
 
-  // --- 1. Select Features for Training ---
-  // We will use these columns as input to the model. We drop the Timestamp.
+  // 3a. Select Features for Training
   const featureCols = ['Open', 'High', 'Low', 'Close', 'Volume', 'Price_Change', 'SMA_10', 'SMA_30'];
   let featuresDf = dataframe.loc({ columns: featureCols });
-  console.log("Step 1: Selected features for training.");
+  console.log("   - Selected features for training.");
 
-  // --- 2. Normalization ---
-  // Scale all feature values to be between 0 and 1.
+  // 3b. Normalization
   const scaler = new df.MinMaxScaler();
   scaler.fit(featuresDf);
   const scaledDf = scaler.transform(featuresDf);
-  console.log("Step 2: Normalized all features to a 0-1 scale.");
+  console.log("   - Normalized all features to a 0-1 scale.");
 
-  console.log("\nVerification of Scaled Data (First 5 rows):");
-  scaledDf.head().print();
-
-  // --- 3. Sequencing ---
-  // Convert the dataframe into an array of sequences.
-  const sequenceLength = 60; // We will use 60 minutes of data to predict the future.
+  // 3c. Sequencing
+  const sequenceLength = 60; // 60 minutes of data to make one prediction
   const sequences = [];
-  const scaledValues = scaledDf.values; // Get the data as a 2D array
+  const scaledValues = scaledDf.values; 
 
   for (let i = 0; i < scaledValues.length - sequenceLength; i++) {
     sequences.push(scaledValues.slice(i, i + sequenceLength));
   }
   
-  // Convert the array of sequences into a TensorFlow Tensor
   const sequenceTensor = tf.tensor3d(sequences);
-
-  console.log("\nStep 3: Created sequential data for the model.");
-  console.log("   - Sequence length: 60 minutes");
+  console.log("   - Created sequential data for the model.");
   
-  console.log("\n--- Verification of Final Tensor ---");
+  // --- Final Verification ---
+  console.log("\n--- DATA PREPARATION COMPLETE ---");
   console.log("Shape of the final data tensor:", sequenceTensor.shape);
   console.log("(Number of Samples, Timesteps per Sample, Features per Timestep)");
-
-  console.log("\n--- DATA PREPARATION COMPLETE ---");
-  console.log("Next Step: Define the AI model architecture and start training.");
+  console.log("\nNext Step: Define the AI model architecture and start training.");
 }
 
 // --- Execute ---
