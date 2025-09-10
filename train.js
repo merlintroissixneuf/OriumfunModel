@@ -1,17 +1,47 @@
-// This is a test file to confirm we can use our AI libraries in the Cloud Shell.
+// --- Imports ---
+const tf = require('@tensorflow/tfjs-node');
+const df = require('danfojs-node');
+const path = require('path');
 
-console.log("Attempting to load AI libraries...");
+// --- Main Function ---
+async function runTraining() {
+  console.log("Starting Orium v2.0 training process...");
 
-try {
-  const tf = require('@tensorflow/tfjs-node');
-  const df = require('danfojs-node');
-
-  console.log("Success! TensorFlow and Danfo.js are ready.");
+  // --- 1. Load Data ---
+  console.log("Step 1: Loading historical data...");
+  const dataPath = path.join(__dirname, 'data/BTCUSD_1min.csv');
   
-  // We can even print the versions to be sure
-  console.log(`TensorFlow.js version: ${tf.version.tfjs}`);
-  
-} catch (error) {
-  console.error("Failed to load AI libraries. Make sure you have run 'npm install @tensorflow/tfjs-node danfojs-node' in this environment.");
-  console.error(error);
-}  
+  try {
+    const dataframe = await df.readCSV(dataPath);
+    console.log("Successfully loaded the dataset.");
+
+    // --- 2. Initial Analysis ---
+    console.log("\nStep 2: Performing initial analysis...");
+    
+    // Print the first 5 rows to see what the data looks like
+    console.log("Dataset Head (First 5 Rows):");
+    dataframe.head().print();
+
+    // Print the shape of the data (rows, columns)
+    console.log("\nDataset Shape:");
+    console.log(dataframe.shape);
+
+    // Print the column names
+    console.log("\nColumn Names:");
+    console.log(dataframe.columns);
+
+    // Print data types of each column
+    console.log("\nData Types:");
+    dataframe.ctypes.print();
+
+
+  } catch (error) {
+    console.error(`\n--- ERROR ---`);
+    console.error(`Failed to load or process the CSV file from: ${dataPath}`);
+    console.error("Please ensure the file exists and is correctly named 'BTCUSD_1min.csv' inside the 'data' directory.");
+    console.error(error);
+  }
+}
+
+// --- Execute ---
+runTraining();
