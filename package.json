@@ -1,0 +1,20 @@
+{
+  "name": "orium-backend",
+  "version": "1.0.0",
+  "description": "The backend API and prediction engine for Project Orium.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "author": "Your Name",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@google-cloud/storage": "^7.11.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}
