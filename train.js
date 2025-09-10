@@ -6,45 +6,40 @@ const path = require('path');
 // --- Main Function ---
 async function runTraining() {
   console.log("--- Orium v2.0 Training Process ---");
-  console.log("Loading the PREPROCESSED and CLEANED dataset...");
 
-  // --- 1. Load Clean Data ---
-  // We now point to our new, smaller, and faster file.
+  // --- 1. Load Data ---
+  console.log("\nStep 1: Loading Cleaned Data...");
   const dataPath = path.join(__dirname, 'data/BTCUSD_1min_clean.csv');
+  const dataframe = await df.readCSV(dataPath);
+  console.log("   - Data loaded successfully.");
+
+  // --- 2. Feature Engineering ---
+  console.log("\nStep 2: Engineering New Features...");
+
+  // Feature 1: Price Change
+  // Calculate the percentage change between the current and previous 'Close' price.
+  const priceChange = dataframe['Close'].pctChange(1).mul(100); // Multiply by 100 for percentage
+  dataframe.addColumn('Price_Change', priceChange, { inplace: true });
+  console.log("   - Created 'Price_Change' feature.");
+
+  // Fill the first row's NaN value (which has no previous price) with 0
+  dataframe.fillna({ columns: ['Price_Change'], values: [0], inplace: true });
+
+
+  // --- 3. Verification ---
+  console.log("\nStep 3: Verifying Engineered Features...");
+
+  console.log("\nData Types (with new feature):");
+  dataframe.ctypes.print();
+
+  console.log("\nDataset Head (with Price_Change):");
+  dataframe.head().print();
   
-  try {
-    const startTime = Date.now();
-    const dataframe = await df.readCSV(dataPath);
-    const endTime = Date.now();
+  console.log("\nDataset Tail (with Price_Change):");
+  dataframe.tail().print();
 
-    console.log(`\n--- SUCCESS ---`);
-    console.log(`Dataset loaded in ${(endTime - startTime) / 1000} seconds.`);
-    
-    // --- 2. Verification Analysis ---
-    console.log("\nVerifying the cleaned dataset...");
-    
-    console.log("\nDataset Shape (Rows, Columns):");
-    console.log(dataframe.shape); // Should be [2465558, 6]
+  console.log("\nNext Step: Add more advanced features (Moving Averages, RSI).");
 
-    console.log("\nColumn Names:");
-    console.log(dataframe.columns);
-
-    console.log("\nData Types:");
-    dataframe.ctypes.print();
-    
-    console.log("\nDataset Head (First 5 Rows):");
-    dataframe.head().print();
-
-    console.log("\nDataset Tail (Last 5 Rows):");
-    dataframe.tail().print();
-
-    console.log("\nNext Step: Feature Engineering.");
-
-  } catch (error) {
-    console.error(`\n--- ERROR ---`);
-    console.error(`Failed to load or process the CLEANED CSV file from: ${dataPath}`);
-    console.error(error);
-  }
 }
 
 // --- Execute ---
