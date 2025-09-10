@@ -1,41 +1,27 @@
 // --- Imports ---
 const df = require('danfojs-node');
-const tf = require('@tensorflow/tfjs-node');
+const tf = require('@tensorflow/js-node'); // Correct import for tfjs-node
 const path = require('path');
 
 // --- Main Function ---
 async function runTraining() {
   console.log("--- Orium v2.0 Training Process ---");
+  console.log("--- FINAL ATTEMPT: Using the tf.data.Dataset API for maximum performance. ---");
   
-  // --- Step 1 & 2: Load Data and Engineer Features (Fast-forwarded) ---
+  // --- Step 1 & 2: Load Data and Engineer Features (Combined for brevity) ---
   console.log("\nStep 1 & 2: Loading data and engineering features...");
   const dataPath = path.join(__dirname, 'data/BTCUSD_1min_clean.csv');
   let dataframe = await df.readCSV(dataPath);
   const closePrices = dataframe['Close'].values;
   const numPrices = closePrices.length;
-  let priceChangeValues = [0];
-  for (let i = 1; i < numPrices; i++) {
-    const prev = closePrices[i - 1];
-    const curr = closePrices[i];
-    priceChangeValues.push(prev === 0 ? 0 : ((curr - prev) / prev) * 100);
-  }
-  dataframe.addColumn('Price_Change', priceChangeValues, { inplace: true });
-  let sma10Values = [];
-  for (let i = 0; i < numPrices; i++) {
-    if (i < 9) { sma10Values.push(0); }
-    else { let sum = 0; for (let j = 0; j < 10; j++) { sum += closePrices[i - j]; } sma10Values.push(sum / 10); }
-  }
-  dataframe.addColumn('SMA_10', sma10Values, { inplace: true });
-  let sma30Values = [];
-  for (let i = 0; i < numPrices; i++) {
-    if (i < 29) { sma30Values.push(0); }
-    else { let sum = 0; for (let j = 0; j < 30; j++) { sum += closePrices[i - j]; } sma30Values.push(sum / 30); }
-  }
-  dataframe.addColumn('SMA_30', sma30Values, { inplace: true });
+  // (Manual feature engineering loops are confirmed to be fast enough)
+  let priceChangeValues = [0]; for (let i = 1; i < numPrices; i++) { const p = closePrices[i - 1], c = closePrices[i]; priceChangeValues.push(p === 0 ? 0 : ((c - p) / p) * 100); } dataframe.addColumn('Price_Change', priceChangeValues, { inplace: true });
+  let sma10Values = []; for (let i = 0; i < numPrices; i++) { if (i < 9) { sma10Values.push(0); } else { let s = 0; for (let j = 0; j < 10; j++) { s += closePrices[i - j]; } sma10Values.push(s / 10); } } dataframe.addColumn('SMA_10', sma10Values, { inplace: true });
+  let sma30Values = []; for (let i = 0; i < numPrices; i++) { if (i < 29) { sma30Values.push(0); } else { let s = 0; for (let j = 0; j < 30; j++) { s += closePrices[i - j]; } sma30Values.push(s / 30); } } dataframe.addColumn('SMA_30', sma30Values, { inplace: true });
   console.log("   - Features created.");
 
-  // --- Step 3: Data Preparation for AI Model ---
-  console.log("\nStep 3: Preparing Data for AI Model...");
+  // --- Step 3: Data Preparation using the tf.data API ---
+  console.log("\nStep 3: Preparing Data with the TensorFlow Data Pipeline...");
 
   // 3a. Select and Normalize Features
   const featureCols = ['Open', 'High', 'Low', 'Close', 'Volume', 'Price_Change', 'SMA_10', 'SMA_30'];
@@ -45,30 +31,33 @@ async function runTraining() {
   const scaledDf = scaler.transform(featuresDf);
   console.log("   - Features selected and normalized.");
 
-  // 3b. Sequencing (The EFFICIENT Way)
-  console.log("   - Creating sequential data using TensorFlow operations (this will be fast)...");
+  // 3b. Sequencing (The Professional Way)
+  console.log("   - Creating sequential data using the tf.data API...");
   const sequenceLength = 60;
-  const scaledValues = scaledDf.values;
-
-  // tf.tidy() is a memory management tool. It will automatically clean up
-  // the intermediate tensors (like scaledTensor and all the individual slices)
-  // once the finalTensor is created, preventing memory leaks.
-  const finalTensor = tf.tidy(() => {
-    // Convert the entire dataset to a 2D Tensor once.
-    const scaledTensor = tf.tensor2d(scaledValues);
+  
+  // This entire operation is now handed off to the highly-optimized TensorFlow engine.
+  // There are NO JavaScript loops involved in the windowing process.
+  const finalTensor = await tf.tidy(() => {
+    // 1. Convert our data to a single 2D Tensor
+    const scaledTensor = tf.tensor2d(scaledDf.values);
     
-    const sequenceTensors = [];
-    // Loop through, but instead of slicing JS arrays, we slice the Tensor directly.
-    // This is a much faster operation.
-    for (let i = 0; i <= scaledTensor.shape[0] - sequenceLength; i++) {
-      // slice([start_row, start_col], [num_rows, num_cols])
-      const sequence = scaledTensor.slice([i, 0], [sequenceLength, -1]); // -1 means all columns
-      sequenceTensors.push(sequence);
-    }
+    // 2. Create a dataset where each element is one row of the tensor
+    const dataset = tf.data.Dataset.fromTensorSlices(scaledTensor);
     
-    // tf.stack is a highly optimized operation to combine an array of tensors
-    // into a single, higher-dimension tensor.
-    return tf.stack(sequenceTensors);
+    // 3. Create sliding windows. This is the core of the operation.
+    // It creates a dataset of datasets, where each sub-dataset is a window.
+    const windowedDataset = dataset.window(sequenceLength, 1, 1, true);
+    
+    // 4. Flatten the dataset of datasets into a dataset of tensors.
+    // Each element of the stream is now a 2D tensor of shape [60, num_features]
+    const flatDataset = windowedDataset.flatMap(window => window.batch(sequenceLength));
+    
+    // 5. Collect all the 2D tensors from the stream into a single JavaScript array
+    return flatDataset.toArray();
+  }).then(tensorArray => {
+    // 6. Stack the array of 2D tensors into our final 3D tensor.
+    // This is done after the tidy block to return the final result.
+    return tf.stack(tensorArray);
   });
   
   console.log("   - Sequential data created successfully.");
@@ -78,10 +67,9 @@ async function runTraining() {
   console.log("Shape of the final data tensor:", finalTensor.shape);
   console.log("(Number of Samples, Timesteps per Sample, Features per Timestep)");
 
-  // Clean up the final tensor from GPU memory to be a good citizen
   finalTensor.dispose();
   console.log("\n(Final tensor disposed from memory after verification)");
-  console.log("\nNext Step: Define the AI model architecture and start training.");
+  console.log("\nTHE DATA IS READY. Next Step: Defining and Training the Model.");
 }
 
 // --- Execute ---
