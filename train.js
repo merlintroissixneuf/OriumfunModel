@@ -1,11 +1,11 @@
 // --- Imports ---
-const tf = require('@tensorflow/tfjs-node');
 const df = require('danfojs-node');
 const path = require('path');
 
 // --- Main Function ---
 async function runTraining() {
   console.log("--- Orium v2.0 Training Process ---");
+  console.log("--- Using Manual Calculation Mode for Guaranteed Compatibility ---");
 
   // --- 1. Load Data ---
   console.log("\nStep 1: Loading Cleaned Data...");
@@ -13,33 +13,64 @@ async function runTraining() {
   const dataframe = await df.readCSV(dataPath);
   console.log("   - Data loaded successfully.");
 
-  // --- 2. Feature Engineering ---
-  console.log("\nStep 2: Engineering New Features...");
+  // --- 2. Manual Feature Engineering ---
+  console.log("\nStep 2: Engineering Features with Manual Loops...");
 
-  // Feature 1: Price Change
-  console.log("   - Calculating 'Price_Change'...");
-  // THE CORRECT WAY: .shift() is a method of the DataFrame, not the Series.
-  const prev_df = dataframe.shift(1); // Create a new DataFrame with all data shifted down
-  const prevClose = prev_df['Close'];     // Select the shifted 'Close' column from the new DataFrame
-  const priceChange = dataframe['Close'].sub(prevClose).div(prevClose).mul(100);
-  dataframe.addColumn('Price_Change', priceChange, { inplace: true });
+  // Get the 'Close' prices as a standard JavaScript array.
+  const closePrices = dataframe['Close'].values;
+  const numPrices = closePrices.length;
+
+  // --- Manual Calculation for Price_Change ---
+  console.log("   - Manually calculating 'Price_Change'...");
+  let priceChangeValues = [0]; // Start with 0 for the first element.
+  for (let i = 1; i < numPrices; i++) {
+    const prev = closePrices[i - 1];
+    const curr = closePrices[i];
+    const change = ((curr - prev) / prev) * 100;
+    priceChangeValues.push(change);
+  }
+  dataframe.addColumn('Price_Change', priceChangeValues, { inplace: true });
+
+  // --- Manual Calculation for SMA_10 ---
+  console.log("   - Manually calculating 'SMA_10'...");
+  let sma10Values = [];
+  for (let i = 0; i < numPrices; i++) {
+    if (i < 9) {
+      sma10Values.push(0); // Not enough data for the first 9 elements.
+    } else {
+      let sum = 0;
+      for (let j = 0; j < 10; j++) {
+        sum += closePrices[i - j];
+      }
+      sma10Values.push(sum / 10);
+    }
+  }
+  dataframe.addColumn('SMA_10', sma10Values, { inplace: true });
+
+  // --- Manual Calculation for SMA_30 ---
+  console.log("   - Manually calculating 'SMA_30'...");
+  let sma30Values = [];
+  for (let i = 0; i < numPrices; i++) {
+    if (i < 29) {
+      sma30Values.push(0); // Not enough data for the first 29 elements.
+    } else {
+      let sum = 0;
+      for (let j = 0; j < 30; j++) {
+        sum += closePrices[i - j];
+      }
+      sma30Values.push(sum / 30);
+    }
+  }
+  dataframe.addColumn('SMA_30', sma30Values, { inplace: true });
   
-  // Feature 2 & 3: Simple Moving Averages (SMA)
-  console.log("   - Calculating 'SMA_10' and 'SMA_30'...");
-  // .rolling() is the correct method on a Series for moving-window calculations.
-  const sma10 = dataframe['Close'].rolling(10).mean();
-  const sma30 = dataframe['Close'].rolling(30).mean();
-  dataframe.addColumn('SMA_10', sma10, { inplace: true });
-  dataframe.addColumn('SMA_30', sma30, { inplace: true });
-
-  // Fill all resulting NaN values from the calculations with 0
+  // Fill any potential lingering NaN values (though our manual method shouldn't produce them).
   dataframe.fillna({ inplace: true, values: 0 });
-  console.log("   - All initial features created.");
+  console.log("   - All features created successfully.");
 
   // --- 3. Verification ---
   console.log("\nStep 3: Verifying Engineered Features...");
   console.log("\nDataset Head (with all new features):");
-  dataframe.head(15).print(); // Print more rows to see the SMAs start to populate
+  dataframe.head(35).print(); // Print 35 rows to show the SMA_30 starting to populate
   
   console.log("\nDataset Tail (with all new features):");
   dataframe.tail().print();
