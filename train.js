@@ -17,11 +17,16 @@ async function runTraining() {
   console.log("\nStep 2: Engineering New Features...");
 
   // Feature 1: Price Change
-  // CORRECTED: Manually calculate percentage change.
-  // .diff(1) calculates the difference between the current and previous element.
-  const priceDiff = dataframe['Close'].diff(1); 
-  const prevClose = dataframe['Close'].shift(1); // Gets the previous 'Close' price for each row
-  const priceChange = priceDiff.div(prevClose).mul(100); // (diff / prev_close) * 100
+  // CORRECTED: The definitive, manual calculation for percentage change.
+  
+  // Get a series of the previous closing prices.
+  const prevClose = dataframe['Close'].shift(1); 
+  
+  // Calculate the difference: current_close - previous_close
+  const priceDiff = dataframe['Close'].sub(prevClose); 
+  
+  // Calculate the percentage change: (difference / previous_close) * 100
+  const priceChange = priceDiff.div(prevClose).mul(100);
   
   dataframe.addColumn('Price_Change', priceChange, { inplace: true });
   console.log("   - Created 'Price_Change' feature.");
