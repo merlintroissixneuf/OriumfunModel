@@ -37,9 +37,8 @@ async function runTraining() {
   }
   dataframe.addColumn('SMA_30', sma30Values, { inplace: true });
   
-  // CORRECTED SYNTAX: Re-assign the result of fillna to the dataframe variable.
-  dataframe = dataframe.fillna({ values: [0] });
-  console.log("   - Features created and NaN values filled.");
+  // REMOVED THE FAILING .fillna() LINE. It is not needed.
+  console.log("   - Features created. The data is already clean.");
 
   // --- Step 3: Data Preparation for AI Model ---
   console.log("\nStep 3: Preparing Data for AI Model...");
