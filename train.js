@@ -3,6 +3,7 @@ const df = require('danfojs-node');
 const tf = require('@tensorflow/tfjs-node');
 const path = require('path');
 const { TradingEnvironment, ACTIONS } = require('./trading_env.js');
+const cliProgress = require('cli-progress'); // The new progress bar library
 
 // --- Hyperparameters ---
 const GAMMA = 0.95;             // Discount factor for future rewards
@@ -22,8 +23,6 @@ function createModel(sequenceLength, numFeatures) {
   model.add(tf.layers.maxPooling1d({ poolSize: 2 }));
   model.add(tf.layers.lstm({ units: 50 }));
   model.add(tf.layers.dropout({ rate: 0.2 }));
-  // The output layer now has 3 units, one for each action (BUY, SELL, HOLD).
-  // It predicts the Q-value (expected future reward) for each action.
   model.add(tf.layers.dense({ units: 3, activation: 'linear' })); 
   model.compile({ optimizer: tf.train.adam(LEARNING_RATE), loss: 'meanSquaredError' });
   return model;
@@ -65,10 +64,46 @@ async function runTraining() {
   let dataframe = await df.readCSV(dataPath);
   const closePrices = dataframe['Close'].values;
   const numPrices = closePrices.length;
-  // (Feature engineering loops)
-  let priceChangeValues = [0]; for (let i = 1; i < numPrices; i++) { const p = closePrices[i - 1], c = closePrices[i]; priceChangeValues.push(p === 0 ? 0 : ((c - p) / p) * 100); } dataframe.addColumn('Price_Change', priceChangeValues, { inplace: true });
-  let sma10Values = []; for (let i = 0; i < numPrices; i++) { if (i < 9) { sma10Values.push(0); } else { let s = 0; for (let j = 0; j < 10; j++) { s += closePrices[i - j]; } sma10Values.push(s / 10); } } dataframe.addColumn('SMA_10', sma10Values, { inplace: true });
-  let sma30Values = []; for (let i = 0; i < numPrices; i++) { if (i < 29) { sma30Values.push(0); } else { let s = 0; for (let j = 0; j < 30; j++) { s += closePrices[i - j]; } sma30Values.push(s / 30); } } dataframe.addColumn('SMA_30', sma30Values, { inplace: true });
+
+  // --- Create a progress bar instance ---
+  const progressBar = new cliProgress.SingleBar({
+    format: ' {bar} | {percentage}% | ETA: {eta}s | {value}/{total} | {task}'
+  }, cliProgress.Presets.shades_classic);
+
+  // --- Manual Calculation for Price_Change with Progress Bar ---
+  let priceChangeValues = [0];
+  progressBar.start(numPrices, 0, { task: "Calculating Price_Change" });
+  for (let i = 1; i < numPrices; i++) {
+    const prev = closePrices[i - 1];
+    const curr = closePrices[i];
+    priceChangeValues.push(prev === 0 ? 0 : ((curr - prev) / prev) * 100);
+    progressBar.increment();
+  }
+  progressBar.stop();
+  dataframe.addColumn('Price_Change', priceChangeValues, { inplace: true });
+
+  // --- Manual Calculation for SMA_10 with Progress Bar ---
+  let sma10Values = [];
+  progressBar.start(numPrices, 0, { task: "Calculating SMA_10      " }); // Extra spaces for alignment
+  for (let i = 0; i < numPrices; i++) {
+    if (i < 9) { sma10Values.push(0); }
+    else { let sum = 0; for (let j = 0; j < 10; j++) { sum += closePrices[i - j]; } sma10Values.push(sum / 10); }
+    progressBar.increment();
+  }
+  progressBar.stop();
+  dataframe.addColumn('SMA_10', sma10Values, { inplace: true });
+
+  // --- Manual Calculation for SMA_30 with Progress Bar ---
+  let sma30Values = [];
+  progressBar.start(numPrices, 0, { task: "Calculating SMA_30      " });
+  for (let i = 0; i < numPrices; i++) {
+    if (i < 29) { sma30Values.push(0); }
+    else { let sum = 0; for (let j = 0; j < 30; j++) { sum += closePrices[i - j]; } sma30Values.push(sum / 30); }
+    progressBar.increment();
+  }
+  progressBar.stop();
+  dataframe.addColumn('SMA_30', sma30Values, { inplace: true });
+  
   dataframe.dropNa({ inplace: true });
   
   // Normalize the data
@@ -76,7 +111,6 @@ async function runTraining() {
   const scaler = new df.MinMaxScaler();
   scaler.fit(dataframe.loc({ columns: featureCols }));
   const scaledDf = scaler.transform(dataframe.loc({ columns: featureCols }));
-  // We need to keep the original 'Close' price for reward calculation.
   scaledDf.addColumn('Close', dataframe['Close'], { inplace: true });
 
   // --- Initialize Environment and Agent ---
@@ -93,34 +127,31 @@ async function runTraining() {
   for (let e = 0; e < NUM_EPISODES; e++) {
     let state = env.reset();
     let totalReward = 0;
+    let step = 0;
 
     while (true) {
+      step++;
       // --- Action Selection ---
       let action;
       if (Math.random() < epsilon) {
-        // Explore: take a random action
         action = Math.floor(Math.random() * Object.keys(ACTIONS).length);
       } else {
-        // Exploit: use the model to predict the best action
         action = tf.tidy(() => {
           const q_values = model.predict(state.expandDims(0));
           return q_values.argMax(1).dataSync()[0];
         });
       }
       
-      // --- Interact with Environment ---
       const { state: nextState, reward, done } = env.step(action);
       totalReward += reward;
 
-      // --- Store Experience ---
       if (nextState) {
         memory.push(state, action, reward, nextState, done);
       }
       
-      state.dispose(); // Clean up old state tensor
+      state.dispose();
       state = nextState;
 
-      // --- Train the Model ---
       if (memory.memory.length > BATCH_SIZE) {
         const batch = memory.sample(BATCH_SIZE);
         const { states, targets } = await tf.tidy(() => {
@@ -151,10 +182,9 @@ async function runTraining() {
     }
     
     epsilon = Math.max(EPSILON_END, epsilon * EPSILON_DECAY);
-    console.log(`Episode ${e + 1}/${NUM_EPISODES} - Final Portfolio: $${env.portfolioValue.toFixed(2)} - Epsilon: ${epsilon.toFixed(4)}`);
+    console.log(`Episode ${e + 1}/${NUM_EPISODES} - Final Portfolio: $${env.portfolioValue.toFixed(2)} - Steps: ${step} - Epsilon: ${epsilon.toFixed(4)}`);
   }
 
-  // --- Save the Model ---
   const modelSavePath = 'file://./orium_rl_model';
   await model.save(modelSavePath);
   console.log(`\n--- TRAINING COMPLETE ---`);
